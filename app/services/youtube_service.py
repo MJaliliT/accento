@@ -15,7 +15,10 @@ def youtube_options() -> dict:
     return {
         "js_runtimes": {"deno": {"path": None}},
         "extractor_args": {
-            "youtube": {"player_client": ["mweb"]},
+            "youtube": {
+                "player_client": ["mweb"],
+                "fetch_pot": ["always"],
+            },
             "youtubepot-bgutilhttp": {
                 "base_url": [settings.POT_PROVIDER_URL],
             },
