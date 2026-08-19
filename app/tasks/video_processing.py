@@ -31,13 +31,13 @@ def store_result(analysis_id: str, result: dict) -> dict:
     return result
 
 
-def store_error(analysis_id: str) -> dict:
+def store_error(analysis_id: str, reason: str = "processing_failed") -> dict:
     result = {
         "status": "error",
         "accent": None,
         "confidence": None,
         "language": None,
-        "reason": "processing_failed",
+        "reason": reason,
     }
     collection.update_one(
         {"_id": analysis_id},

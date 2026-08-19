@@ -31,6 +31,9 @@ function readableLabel(value: string) {
 }
 
 function resultMessage(analysis: Analysis) {
+  if (analysis.reason === 'youtube_access_blocked') {
+    return ['YouTube access blocked', 'YouTube refused the server request before audio could be analyzed. Try another public video later.']
+  }
   if (analysis.reason === 'live_stream_skipped') {
     return ['Live stream', 'Live videos are not analyzed. Try a recorded video.']
   }

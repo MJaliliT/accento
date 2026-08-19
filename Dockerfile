@@ -1,3 +1,5 @@
+FROM denoland/deno:bin-2.9.4 AS deno-bin
+
 FROM python:3.10-slim-bookworm AS python-base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -17,6 +19,7 @@ USER accento
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
 
 FROM python-base AS worker-deps
+COPY --from=deno-bin /deno /usr/local/bin/deno
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ffmpeg \
       libsndfile1 \

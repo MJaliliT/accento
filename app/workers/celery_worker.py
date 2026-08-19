@@ -1,7 +1,8 @@
 from celery import Celery
 
 from app.core.config import settings
-from app.tasks.video_processing import process_video
+from app.services.youtube_errors import YoutubeAccessBlocked
+from app.tasks.video_processing import process_video, store_error
 
 celery = Celery(
     "accento",
@@ -20,11 +21,11 @@ celery.conf.update(
 def process_video_task(self, analysis_id: str, url: str):
     try:
         return process_video(analysis_id, url)
+    except YoutubeAccessBlocked:
+        return store_error(analysis_id, reason="youtube_access_blocked")
     except Exception as exc:
         if self.request.retries < self.max_retries:
             raise self.retry(exc=exc, countdown=10 * (2 ** self.request.retries))
-
-        from app.tasks.video_processing import store_error
 
         store_error(analysis_id)
         raise

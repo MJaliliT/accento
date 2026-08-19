@@ -1,34 +1,53 @@
 import glob
 import os
+import shutil
 import tempfile
 
 import yt_dlp
-from yt_dlp.utils import download_range_func
+from yt_dlp.utils import DownloadError, download_range_func
 
 from app.core.logger import logger
+from app.services.youtube_errors import YoutubeAccessBlocked, is_youtube_access_blocked
+
+
+def youtube_options() -> dict:
+    return {
+        "js_runtimes": {"deno": {"path": None}},
+    }
 
 
 def get_video_info(url: str):
-    with yt_dlp.YoutubeDL({
+    options = {
+        **youtube_options(),
         "quiet": True,
         "noplaylist": True,
         "socket_timeout": 15,
         "retries": 2,
-    }) as ydl:
-        info = ydl.extract_info(url, download=False)
+    }
+    try:
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except DownloadError as exc:
+        if is_youtube_access_blocked(exc):
+            raise YoutubeAccessBlocked(
+                "YouTube rejected the worker host before media extraction."
+            ) from exc
+        logger.exception("Video metadata extraction failed")
+        raise
 
-        return {
-            "title": info.get("title"),
-            "description": info.get("description"),
-            "is_live": info.get("is_live"),
-            "live_status": info.get("live_status")
-        }
+    return {
+        "title": info.get("title"),
+        "description": info.get("description"),
+        "is_live": info.get("is_live"),
+        "live_status": info.get("live_status")
+    }
 
 
 def download_audio(url: str, seconds: int = 5):
     work_dir = tempfile.mkdtemp(prefix="accento-", dir=None)
     output = os.path.join(work_dir, "sample.%(ext)s")
     opts = {
+        **youtube_options(),
         "format": "bestaudio/best",
         "outtmpl": output,
         "download_ranges": download_range_func(None, [(0, seconds)]),
@@ -52,6 +71,15 @@ def download_audio(url: str, seconds: int = 5):
         if not matches:
             raise RuntimeError("Audio conversion did not produce a WAV file")
         return matches[0]
-    except Exception:
+    except DownloadError as exc:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        if is_youtube_access_blocked(exc):
+            raise YoutubeAccessBlocked(
+                "YouTube rejected the worker host during media extraction."
+            ) from exc
         logger.exception("Audio download failed")
+        raise
+    except Exception:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        logger.exception("Audio conversion failed")
         raise
