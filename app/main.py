@@ -9,7 +9,6 @@ from app.api.routes import detection, health
 from app.core.config import settings
 from app.core.database_async import create_indexes
 
-
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await create_indexes()
