@@ -1,4 +1,9 @@
 venv/
+.venv/
+.venv-test/
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
 __pycache__/
 /app/__pycache__/
 /app/.DS_Store

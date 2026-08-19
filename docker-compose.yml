@@ -1,51 +1,67 @@
+name: accento-dev
+
 services:
+  web:
+    build:
+      context: .
+      target: web
+    ports:
+      - "8080:8080"
+    depends_on:
+      api:
+        condition: service_healthy
 
   api:
-    build: .
-    container_name: accento-api
-    env_file:
-      - .env
-    ports:
-      - "8000:8000"
+    build:
+      context: .
+      target: api
+    environment: &app-environment
+      ENV: development
+      MONGO_URL: mongodb://admin:admin123@mongo:27017/accento?authSource=admin
+      MONGO_DB: accento
+      REDIS_URL: redis://:development@redis:6379/0
+      CELERY_BROKER_URL: redis://:development@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:development@redis:6379/0
+      DAILY_ANALYSIS_LIMIT: "4"
+      ALLOWED_HOSTS: localhost,127.0.0.1,api
     depends_on:
-      - redis
-      - mongo
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready', timeout=4)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   worker:
-    build: .
-    container_name: accento-worker
-    env_file:
-      - .env
-    command: celery -A app.workers.celery_worker worker --loglevel=INFO --concurrency=1 --pool=solo
+    build:
+      context: .
+      target: worker
+    environment: *app-environment
     depends_on:
-      - redis
-      - mongo
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
 
   redis:
-    image: redis:7
-    container_name: accento-redis
-    ports:
-      - "6379:6379"
+    image: redis:7.4-alpine
+    command: ["redis-server", "--requirepass", "development"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "development", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   mongo:
-    image: mongo:6
-    container_name: accento-mongo
-    command:
-      [
-        "mongod",
-        "--quiet",
-        "--setParameter",
-        "logComponentVerbosity={network: {verbosity: -1}}"
-      ]
+    image: mongo:7.0
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: admin123
-    ports:
-      - "27017:27017"
-
-    volumes:
-      - mongo_data:/data/db
-
-volumes:
-  mongo_data:
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--username", "admin", "--password", "admin123", "--authenticationDatabase", "admin", "--eval", "db.adminCommand({ ping: 1 })"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

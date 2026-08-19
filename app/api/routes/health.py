@@ -1,15 +1,18 @@
 from fastapi import APIRouter
 
+from app.core.cache import redis_client
 from app.core.database_async import async_db as db
 
-router = APIRouter()
+router = APIRouter(prefix="/api/health", tags=["health"])
 
 
-@router.get("/health")
-async def health():
-    cols = await db.list_collection_names()
+@router.get("/live")
+async def live():
+    return {"status": "ok"}
 
-    return {
-        "status": "ok",
-        "collections": cols
-    }
+
+@router.get("/ready")
+async def ready():
+    await db.command("ping")
+    await redis_client.ping()
+    return {"status": "ok"}

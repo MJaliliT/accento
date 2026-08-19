@@ -6,4 +6,4 @@ sync_client = MongoClient(settings.MONGO_URL)
 
 sync_db = sync_client[settings.MONGO_DB]
 
-collection = sync_db["videos"]
+collection = sync_db["analyses"]

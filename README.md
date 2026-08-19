@@ -1,314 +1,51 @@
-# Accento: AI-Powered Youtube Accent Analysis Backend + Chrome Extension
+# Accento
 
+Accento is a public, quota-protected web application that estimates the English
+accent spoken in a public YouTube video. A React frontend submits one video at a
+time to a FastAPI API; Celery performs language and accent inference in the
+background, with Redis for queueing/global quota enforcement and MongoDB for short-lived
+results.
 
-## Project Overview
+## Production behavior
 
-Accento is a production-ready AI backend service that analyzes spoken
-English in YouTube videos and classifies the speaker's accent using
-machine learning.
+- Single-video analysis with progress polling
+- Redis-backed global limit of four submissions per UTC day
+- Strict YouTube URL allowlist and normalization
+- Five-second temporary audio samples, deleted after processing
+- Results expire from MongoDB after 30 days
+- Same-origin API with no public database, cache, or worker ports
+- Immutable Git-SHA container deployments through GitHub Actions
 
-The system uses a hybrid architecture:
+## Local development
 
--   FastAPI (async) --- handles API requests
--   Celery workers (sync) --- performs ML processing
--   MongoDB + Redis --- persistence and caching
+The complete Docker development stack includes the embedded ML model and can
+take time to build the first time:
 
-This design enables instant API responses while heavy processing runs
-asynchronously.
-
-------------------------------------------------------------------------
-
-## Key Capabilities
-
-| Capability               | Description                                      |
-|--------------------------|--------------------------------------------------|
-| Accent Detection         | Classifies English accents using ONNX models     |
-| Language Detection       | Skips non-English audio early                    |
-| Live Stream Handling     | Skips live videos automatically                  |
-| Async Processing         | FastAPI + Celery architecture                    |
-| Redis Caching            | Prevents duplicate work                          |
-| MongoDB Storage          | Stores results and states                        |
-| Batch Processing         | Queue multiple videos                            |
-| Chrome Extension Ready   | Supports real-time filtering                     |
-
-------------------------------------------------------------------------
-
-## Architecture Overview
-
-    FastAPI (async)
-       ↓
-    Redis (cache)
-       ↓
-    MongoDB (async)
-       ↓
-    Celery Worker (sync)
-       ↓
-    ML Pipeline (Whisper + Wav2Vec2 ONNX)
-
-------------------------------------------------------------------------
-
-## Processing Flow
-
-1.  Client sends video URL
-2.  API checks Redis
-3.  If not found → checks MongoDB
-4.  If not found → inserts status = "processing"
-5.  Celery task is triggered
-
-### Worker Steps
-
--   Re-checks Redis (cache hit shortcut)
--   Re-checks MongoDB (idempotency)
--   Fetches video metadata
--   Skips live streams
--   Downloads audio
--   Detects language
--   Skips non-English audio
--   Runs accent detection
--   Stores result in MongoDB
--   Caches result in Redis
-
-6.  Client re-requests result
-
-------------------------------------------------------------------------
-
-## Processing States
-
-| Status     | Description                      |
-|------------|----------------------------------|
-| processing | Task is queued or running        |
-| done       | Successfully processed           |
-| error      | Processing failed                |
-
-------------------------------------------------------------------------
-
-## Special Cases
-
-### Live Streams
-
-``` json
-{
-  "status": "done",
-  "reason": "live_stream_skipped"
-}
-```
-
-### Non-English Audio
-
-``` json
-{
-  "status": "done",
-  "reason": "non_english"
-}
-```
-
-------------------------------------------------------------------------
-
-## Features
-
-### Accent Classification
-
-Detects the most likely accent of English speech.
-
-### Output Includes
-
--   Predicted accent
--   Confidence score
-
-Full probability distribution is computed internally but not returned in
-API responses.
-
-### Example Response
-
-``` json
-{
-  "status": "done",
-  "url": "...",
-  "accent": "american",
-  "confidence": 0.82
-}
-```
-
-------------------------------------------------------------------------
-
-## Intelligent Processing Pipeline
-
-### Optimizations
-
--   Early Redis cache lookup
--   MongoDB fallback
--   Skip live videos
--   Skip non-English audio
--   Process only \~5 seconds of audio
-
-------------------------------------------------------------------------
-
-## Asynchronous ML Processing
-
-    API → Queue → Worker → Store → Cache
-
--   API remains fast
--   Workers handle heavy ML tasks
-
-------------------------------------------------------------------------
-
-## Caching Strategy
-
-    Request → Redis → MongoDB → Worker
-
--   Redis = fast lookup
--   MongoDB = persistent storage
--   Worker = fallback processing
-
-------------------------------------------------------------------------
-
-## Folder Structure
-
-    accento/
-    │
-    ├── app/
-    │   ├── api/
-    │   │   └── routes/
-    │   │       ├── detection.py
-    │   │       └── health.py
-    │
-    │   ├── core/
-    │   │   ├── cache.py
-    │   │   ├── cache_sync.py
-    │   │   ├── config.py
-    │   │   ├── database_async.py
-    │   │   ├── database_sync.py
-    │   │   └── logger.py
-    │
-    │   ├── models/
-    │   │   ├── base.py
-    │   │   └── video_result.py
-    │
-    │   ├── schemas/
-    │   │   └── detection.py
-    │
-    │   ├── services/
-    │   │   ├── accent_service.py
-    │   │   ├── language_service.py
-    │   │   ├── youtube_service.py
-    │   │   └── accent_model/
-    │
-    │   ├── tasks/
-    │   │   └── video_processing.py
-    │
-    │   ├── workers/
-    │   │   └── celery_worker.py
-    │
-    │   └── main.py
-    │
-    ├── extension/
-    ├── docker-compose.yml
-    ├── Dockerfile
-    ├── requirements.txt
-    ├── .env
-    └── README.md
-
-------------------------------------------------------------------------
-
-## Setup & Running
-
-### 1️⃣ Clone
-
-``` bash
-git clone https://github.com/mohammadJaliliTorkamani/accento
-cd accento
-```
-
-### 2️⃣ Environment Variables
-
-``` env
-APP_NAME=yt-indian-detector
-ENV=development
-DEBUG=True
-
-MONGO_URL=mongodb://admin:admin123@mongo:27017/yt_detector?authSource=admin
-MONGO_DB=yt_detector
-
-REDIS_URL=redis://redis:6379/0
-
-CELERY_BROKER_URL=redis://redis:6379/0
-CELERY_RESULT_BACKEND=redis://redis:6379/0
-
-TEMP_AUDIO_DIR=/tmp/audio
-ACCENT_THRESHOLD=0.6
-```
-
-### 3️⃣ Run
-
-``` bash
+```bash
 docker compose up --build
 ```
 
-------------------------------------------------------------------------
+Open `http://localhost:8080`. The local stack uses the same four-per-day global
+quota as production; restart or clear Redis to reset it during development.
 
-## API Endpoints
+For frontend-only work:
 
-### Health
-
-    GET /health
-
-### Detect
-
-    POST /detect
-
-Initial response:
-
-``` json
-{
-  "status": "processing"
-}
+```bash
+cd frontend
+npm install
+npm run dev
 ```
 
-### Batch Detection
+For backend unit tests:
 
-    POST /detect/batch
-
-``` json
-{
-  "url1": { "status": "processing" },
-  "url2": { "status": "processing" }
-}
+```bash
+python -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/pytest -q
 ```
 
-Batch endpoint queues jobs only --- results must be fetched later.
+## Deployment
 
-------------------------------------------------------------------------
-
-## Chrome Extension
-
-Supports a browser extension that: - Detects accents on YouTube pages\
-- Applies visual indicators (green/red borders)\
-- Filters videos based on user preferences
-
-------------------------------------------------------------------------
-
-## Performance Optimizations
-
--   Redis caching
--   MongoDB persistence
--   Early exit for live/non-English
--   Short audio (\~5 sec)
--   ONNX runtime for fast inference
--   Background workers
-
-------------------------------------------------------------------------
-
-## Future Improvements
-
--   Return full probability distribution
--   GPU acceleration
--   Real-time streaming
--   Distributed workers
--   Observability (Prometheus + Grafana)
--   Authentication & rate limiting
-
-------------------------------------------------------------------------
-
-## License
-
-MIT License
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the exact Hostinger DNS, GitHub Actions,
+Nginx, TLS, verification, and rollback steps for
+`accento.mjalili.com`.

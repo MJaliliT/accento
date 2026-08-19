@@ -3,6 +3,7 @@ from faster_whisper import WhisperModel
 from app.core.logger import logger
 
 _LANG_MODEL = None
+MODEL_DIR = "/app/app/services/accent_model/whisper-tiny"
 
 
 def get_model():
@@ -12,9 +13,10 @@ def get_model():
         logger.info("Loading whisper model")
 
         _LANG_MODEL = WhisperModel(
-            "tiny",
+            MODEL_DIR,
             device="cpu",
-            compute_type="int8"
+            compute_type="int8",
+            local_files_only=True,
         )
 
     return _LANG_MODEL

@@ -1,16 +1,16 @@
-from typing import List, Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, HttpUrl
 
 
-class VideoRequest(BaseModel):
+class AnalysisRequest(BaseModel):
     url: HttpUrl
 
 
-class BatchRequest(BaseModel):
-    urls: List[HttpUrl]
-
-
-class AccentFilter(BaseModel):
-    allowed_accents: Optional[List[str]] = None
-    blocked_accents: Optional[List[str]] = None
+class AnalysisResponse(BaseModel):
+    id: str
+    status: Literal["processing", "done", "error"]
+    accent: Optional[str] = None
+    confidence: Optional[float] = None
+    language: Optional[str] = None
+    reason: Optional[str] = None

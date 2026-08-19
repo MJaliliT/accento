@@ -1,12 +1,20 @@
+import glob
+import os
 import tempfile
 
 import yt_dlp
+from yt_dlp.utils import download_range_func
 
 from app.core.logger import logger
 
 
 def get_video_info(url: str):
-    with yt_dlp.YoutubeDL({"quiet": True}) as ydl:
+    with yt_dlp.YoutubeDL({
+        "quiet": True,
+        "noplaylist": True,
+        "socket_timeout": 15,
+        "retries": 2,
+    }) as ydl:
         info = ydl.extract_info(url, download=False)
 
         return {
@@ -18,34 +26,32 @@ def get_video_info(url: str):
 
 
 def download_audio(url: str, seconds: int = 5):
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+    work_dir = tempfile.mkdtemp(prefix="accento-", dir=None)
+    output = os.path.join(work_dir, "sample.%(ext)s")
+    opts = {
+        "format": "bestaudio/best",
+        "outtmpl": output,
+        "download_ranges": download_range_func(None, [(0, seconds)]),
+        "force_keyframes_at_cuts": True,
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "wav",
+        }],
+        "postprocessor_args": ["-ar", "16000", "-ac", "1"],
+        "noplaylist": True,
+        "quiet": True,
+        "socket_timeout": 15,
+        "retries": 2,
+        "fragment_retries": 2,
+    }
 
-        output = f.name
-
-        opts = {
-            "format": "bestaudio/best",
-            "outtmpl": output + ".%(ext)s",
-            "postprocessor_args": [
-                "-ss", "0",
-                "-t", str(seconds)
-            ],
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "wav"
-            }],
-            "noplaylist": True,
-            "quiet": True
-        }
-
-        try:
-
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.download([url])
-
-            return output + ".wav"
-
-        except Exception:
-
-            logger.exception("Audio download failed")
-
-            raise
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.download([url])
+        matches = glob.glob(os.path.join(work_dir, "*.wav"))
+        if not matches:
+            raise RuntimeError("Audio conversion did not produce a WAV file")
+        return matches[0]
+    except Exception:
+        logger.exception("Audio download failed")
+        raise

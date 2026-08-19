@@ -1,83 +1,64 @@
+import json
+
 import numpy as np
-import torch
-import torchaudio
 import onnxruntime as ort
-from transformers import Wav2Vec2FeatureExtractor
+import soundfile as sf
 
 from app.core.logger import logger
 
-MODEL_NAME = "MilesPurvis/english-accent-classifier"
+MODEL_DIR = "/app/app/services/accent_model"
 
 _SESSION = None
-_EXTRACTOR = None
 _ID2LABEL = None
 
 
 def get_model():
-    global _SESSION, _EXTRACTOR, _ID2LABEL
+    global _SESSION, _ID2LABEL
 
     if _SESSION is None:
-
+        available_providers = ort.get_available_providers()
+        preferred_providers = [
+            provider
+            for provider in ("CUDAExecutionProvider", "CPUExecutionProvider")
+            if provider in available_providers
+        ]
         _SESSION = ort.InferenceSession(
-            "/app/app/services/accent_model/accent_model.onnx",
-            providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
+            f"{MODEL_DIR}/accent_model.onnx",
+            providers=preferred_providers,
         )
 
-        _EXTRACTOR = Wav2Vec2FeatureExtractor.from_pretrained(MODEL_NAME)
+        with open(f"{MODEL_DIR}/config.json", encoding="utf-8") as config_file:
+            labels = json.load(config_file)["id2label"]
+        _ID2LABEL = {int(index): label for index, label in labels.items()}
 
-        from transformers import Wav2Vec2ForSequenceClassification
-        model = Wav2Vec2ForSequenceClassification.from_pretrained(MODEL_NAME)
-
-        _ID2LABEL = model.config.id2label
-
-    return _SESSION, _EXTRACTOR, _ID2LABEL
+    return _SESSION, _ID2LABEL
 
 
 def detect_accent(audio_path: str):
+    session, id2label = get_model()
+    logger.info("Running accent model")
 
-    session, extractor, id2label = get_model()
+    audio, sample_rate = sf.read(audio_path, dtype="float32", always_2d=True)
+    if sample_rate != 16000:
+        raise ValueError(f"Expected 16 kHz audio, received {sample_rate} Hz")
 
-    logger.info("Loading model...")
-    audio, sr = torchaudio.load(audio_path)
+    audio = audio.mean(axis=1)[: 5 * 16000]
+    if audio.size == 0:
+        raise ValueError("Audio sample is empty")
 
-    if sr != 16000:
-        resampler = torchaudio.transforms.Resample(sr, 16000)
-        audio = resampler(audio)
+    variance = np.var(audio)
+    audio = (audio - np.mean(audio)) / np.sqrt(variance + 1e-7)
+    logits = session.run(
+        None,
+        {"input_values": audio[np.newaxis, :].astype("float32")},
+    )[0][0]
 
-    audio, sr = torchaudio.load(audio_path)
-
-    # ensure mono
-    if audio.shape[0] > 1:
-        audio = audio.mean(dim=0, keepdim=True)
-
-    if sr != 16000:
-        resampler = torchaudio.transforms.Resample(sr, 16000)
-        audio = resampler(audio)
-
-    audio = audio.squeeze().numpy()
-
-    audio = audio[: 5 * 16000]
-
-    inputs = extractor(
-        audio,
-        sampling_rate=16000,
-        return_tensors="np",
-        padding=False
-    )
-
-    ort_inputs = {
-        "input_values": inputs["input_values"].astype("float32")
-    }
-
-    logits = session.run(None, ort_inputs)[0]
-
-    probs = torch.softmax(torch.tensor(logits), dim=-1)[0].numpy()
-
+    shifted = logits - np.max(logits)
+    probabilities = np.exp(shifted) / np.exp(shifted).sum()
     results = {
-        id2label[i]: float(p)
-        for i, p in enumerate(probs)
+        id2label[index]: float(probability)
+        for index, probability in enumerate(probabilities)
     }
-
     top_accent = max(results, key=results.get)
-
-    return top_accent, results[top_accent], results
+    normalized_accent = top_accent.lower().replace(" ", "_")
+    return normalized_accent, results[top_accent], results
