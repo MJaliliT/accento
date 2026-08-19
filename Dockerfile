@@ -1,5 +1,3 @@
-FROM denoland/deno:bin-2.9.4 AS deno-bin
-
 FROM python:3.10-slim-bookworm AS python-base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -9,7 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DEFAULT_TIMEOUT=600
 
 WORKDIR /app
-RUN groupadd --system accento && useradd --system --gid accento --home /app accento
+RUN groupadd --system --gid 10001 accento \
+    && useradd --system --uid 10001 --gid accento --home /app accento \
+    && install -d -o accento -g accento -m 700 /var/lib/accento/uploads
 COPY requirements-api.txt .
 RUN pip install --no-cache-dir -r requirements-api.txt
 
@@ -19,7 +19,6 @@ USER accento
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
 
 FROM python-base AS worker-deps
-COPY --from=deno-bin /deno /usr/local/bin/deno
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ffmpeg \
       libsndfile1 \
@@ -50,7 +49,7 @@ ENV HF_HOME=/tmp/huggingface \
     TRANSFORMERS_OFFLINE=1 \
     HF_HUB_OFFLINE=1
 USER accento
-CMD ["celery", "-A", "app.workers.celery_worker:celery", "worker", "--loglevel=INFO", "--queues=accento", "--concurrency=1", "--max-tasks-per-child=20"]
+CMD ["celery", "-A", "app.workers.celery_worker:celery", "worker", "--beat", "--schedule=/tmp/celerybeat-schedule", "--loglevel=INFO", "--queues=accento", "--concurrency=1", "--max-tasks-per-child=20"]
 
 FROM node:24-alpine AS frontend-build
 WORKDIR /frontend

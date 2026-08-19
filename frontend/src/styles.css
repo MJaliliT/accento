@@ -82,7 +82,7 @@ h1 {
 }
 
 label { display: block; margin: 0 0 9px 2px; font-size: 13px; font-weight: 700; }
-.form-row { display: flex; gap: 10px; }
+.form-row, .upload-row { display: flex; gap: 10px; }
 
 input {
   flex: 1;
@@ -97,6 +97,34 @@ input {
 
 input:focus { border-color: #2f9d72; box-shadow: 0 0 0 3px rgba(47, 157, 114, .17); }
 input:disabled { opacity: .72; }
+
+.upload-picker {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 64px;
+  margin: 0;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  border: 1px dashed #b9b6aa;
+  border-radius: 12px;
+  background: #f7f4eb;
+  cursor: pointer;
+  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+.upload-picker:hover { border-color: #2f9d72; background: rgba(47, 157, 114, .06); }
+.upload-picker:has(.file-input:focus-visible) { border-color: #2f9d72; box-shadow: 0 0 0 3px rgba(47, 157, 114, .17); }
+.upload-selected { border-style: solid; border-color: rgba(47, 157, 114, .55); }
+.file-input { position: absolute; width: 1px; height: 1px; padding: 0; opacity: 0; overflow: hidden; }
+.upload-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; background: #dff3e9; color: #176346; font-size: 19px; font-weight: 800; }
+.upload-copy { min-width: 0; }
+.upload-copy strong, .upload-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upload-copy strong { color: #263b34; font-size: 13px; }
+.upload-copy small { margin-top: 4px; color: #65736e; font-size: 10px; font-weight: 500; }
+.browse-label { padding: 7px 9px; border: 1px solid #d8d4c8; border-radius: 7px; color: #176346; font-size: 10px; font-weight: 750; }
 
 button {
   min-width: 158px;
@@ -233,7 +261,7 @@ footer a:hover { text-decoration: underline; }
   h1 { font-size: clamp(40px, 13.4vw, 58px); }
   .subtitle { font-size: 16px; }
   .analyzer { margin-top: 34px; padding: 18px; }
-  .form-row { flex-direction: column; }
+  .form-row, .upload-row { flex-direction: column; }
   button { width: 100%; }
   .form-meta { flex-direction: column; }
   .result { grid-template-columns: 1fr; }
@@ -263,6 +291,13 @@ footer a:hover { text-decoration: underline; }
   .builder-line a { color: #68d5aa; }
   .analyzer { border-color: #33453f; background: rgba(23, 34, 30, .96); box-shadow: 0 22px 58px rgba(0,0,0,.24); }
   input { border-color: #3a4d46; background: #101815; color: #ecf7f1; }
+  .upload-picker { border-color: #4b5d56; background: #101815; }
+  .upload-picker:hover { border-color: #68d5aa; background: rgba(104, 213, 170, .07); }
+  .upload-selected { border-color: #416f5d; }
+  .upload-icon { background: #1d3b30; color: #68d5aa; }
+  .upload-copy strong { color: #ecf7f1; }
+  .upload-copy small { color: #a1b3ac; }
+  .browse-label { border-color: #3a4d46; color: #68d5aa; }
   .benefits article { border-color: #33453f; }
   .quota-badge { border-color: #3a4d46; color: #a1b3ac; }
   .api-version, .endpoint-list article, .architecture span { border-color: #33453f; }

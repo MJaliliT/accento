@@ -21,10 +21,9 @@ class Settings:
     ACCENT_THRESHOLD = float(os.getenv("ACCENT_THRESHOLD", 0.6))
 
     TEMP_AUDIO_DIR = os.getenv("TEMP_AUDIO_DIR", "/tmp")
-    POT_PROVIDER_URL = os.getenv(
-        "POT_PROVIDER_URL",
-        "http://pot-provider:4416",
-    )
+    UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/var/lib/accento/uploads")
+    MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
+    UPLOAD_RETENTION_SECONDS = int(os.getenv("UPLOAD_RETENTION_SECONDS", "1800"))
 
     DAILY_ANALYSIS_LIMIT = int(os.getenv("DAILY_ANALYSIS_LIMIT", "4"))
     RESULT_CACHE_SECONDS = int(os.getenv("RESULT_CACHE_SECONDS", "86400"))

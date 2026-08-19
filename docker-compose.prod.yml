@@ -13,6 +13,7 @@ services:
     tmpfs:
       - /var/cache/nginx
       - /var/run
+      - /tmp:size=32m,mode=1777
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -38,6 +39,11 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
+      UPLOAD_DIR: /var/lib/accento/uploads
+      MAX_UPLOAD_BYTES: "26214400"
+      UPLOAD_RETENTION_SECONDS: "1800"
+    volumes:
+      - upload_data:/var/lib/accento/uploads
     depends_on:
       mongo:
         condition: service_healthy
@@ -48,6 +54,8 @@ services:
       - /tmp:size=64m,mode=1777
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready', timeout=4)"]
       interval: 30s
@@ -64,36 +72,24 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
+      UPLOAD_DIR: /var/lib/accento/uploads
+      MAX_UPLOAD_BYTES: "26214400"
+      UPLOAD_RETENTION_SECONDS: "1800"
+    volumes:
+      - upload_data:/var/lib/accento/uploads
     depends_on:
       mongo:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      pot-provider:
         condition: service_healthy
     read_only: true
     tmpfs:
       - /tmp:size=512m,mode=1777
     security_opt:
       - no-new-privileges:true
-    mem_limit: 4g
-
-  pot-provider:
-    image: brainicism/bgutil-ytdlp-pot-provider:1.3.1@sha256:1aaa43a0ca72dfca6a6d2129a0fb4a23465c25adb1b043f8aff829a20825646b
-    restart: unless-stopped
-    read_only: true
-    tmpfs:
-      - /tmp:size=64m,mode=1777
-    security_opt:
-      - no-new-privileges:true
     cap_drop:
       - ALL
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4416/ping').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    mem_limit: 256m
+    mem_limit: 4g
 
   redis:
     image: redis:7.4-alpine
@@ -132,3 +128,9 @@ services:
 volumes:
   mongo_data:
   redis_data:
+  upload_data:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=128m,uid=10001,gid=10001,mode=0700

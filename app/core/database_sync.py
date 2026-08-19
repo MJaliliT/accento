@@ -2,8 +2,12 @@ from pymongo import MongoClient
 
 from app.core.config import settings
 
-sync_client = MongoClient(settings.MONGO_URL)
+_sync_client = None
 
-sync_db = sync_client[settings.MONGO_DB]
 
-collection = sync_db["analyses"]
+def get_collection():
+    global _sync_client
+
+    if _sync_client is None:
+        _sync_client = MongoClient(settings.MONGO_URL)
+    return _sync_client[settings.MONGO_DB]["analyses"]

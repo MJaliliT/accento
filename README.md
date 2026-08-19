@@ -1,17 +1,19 @@
 # Accento
 
 Accento is a public, quota-protected web application that estimates the English
-accent spoken in a public YouTube video. A React frontend submits one video at a
+accent in an uploaded video. A React frontend streams one bounded upload at a
 time to a FastAPI API; Celery performs language and accent inference in the
-background, with Redis for queueing/global quota enforcement and MongoDB for short-lived
-results.
+background, with Redis for queueing/global quota enforcement and MongoDB for
+short-lived results.
 
 ## Production behavior
 
 - Single-video analysis with progress polling
 - Redis-backed global limit of four submissions per UTC day
-- Strict YouTube URL allowlist and normalization
-- Five-second temporary audio samples, deleted after processing
+- Raw video uploads capped at 25 MiB and validated by FFmpeg in a non-root worker
+- A shared 128 MiB tmpfs staging area that cannot fill the VPS disk
+- Immediate deletion after processing, plus cleanup of files older than 30 minutes
+- Five-second temporary audio samples, also deleted after processing
 - Results expire from MongoDB after 30 days
 - Same-origin API with no public database, cache, or worker ports
 - Immutable Git-SHA container deployments through GitHub Actions
@@ -46,6 +48,7 @@ python -m venv .venv
 
 ## Deployment
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for the exact Hostinger DNS, GitHub Actions,
-Nginx, TLS, verification, and rollback steps for
-`accento.mjalili.com`.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for a generic GitHub Actions, Nginx, TLS,
+verification, and rollback guide. Private infrastructure identifiers such as
+the VPS address, SSH username, and host keys must be stored only in GitHub
+Actions secrets or the operator's local environment.

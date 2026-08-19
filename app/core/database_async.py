@@ -1,4 +1,5 @@
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import OperationFailure
 
 from app.core.config import settings
 
@@ -10,7 +11,11 @@ async_collection = async_db["analyses"]
 
 
 async def create_indexes():
-    await async_collection.create_index("url", unique=True)
+    try:
+        await async_collection.drop_index("url_1")
+    except OperationFailure as exc:
+        if exc.code != 27:
+            raise
     await async_collection.create_index(
         "updated_at",
         expireAfterSeconds=settings.RESULT_RETENTION_DAYS * 86400,

@@ -1,10 +1,6 @@
 from typing import Literal, Optional
 
-from pydantic import BaseModel, HttpUrl
-
-
-class AnalysisRequest(BaseModel):
-    url: HttpUrl
+from pydantic import BaseModel
 
 
 class AnalysisResponse(BaseModel):

@@ -1,22 +1,24 @@
-import hashlib
 import json
+import os
 from datetime import datetime, timezone
+from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Response, status
-from pymongo.errors import DuplicateKeyError
+from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from app.core.cache import redis_client
+from app.core.config import settings
 from app.core.database_async import async_collection as collection
 from app.core.rate_limit import enforce_daily_submission_limit
 from app.core.task_queue import enqueue_analysis
-from app.schemas.detection import AnalysisRequest, AnalysisResponse
-from app.services.url_service import InvalidYouTubeUrl, normalize_youtube_url
+from app.schemas.detection import AnalysisResponse
+from app.services.upload_service import (
+    ALLOWED_UPLOAD_TYPES,
+    cleanup_stale_uploads,
+    delete_upload,
+    upload_path_for,
+)
 
 router = APIRouter(prefix="/api/analyses", tags=["analyses"])
-
-
-def analysis_id_for(url: str) -> str:
-    return hashlib.sha256(url.encode("utf-8")).hexdigest()[:32]
 
 
 def public_result(document: dict) -> AnalysisResponse:
@@ -30,79 +32,78 @@ def public_result(document: dict) -> AnalysisResponse:
     )
 
 
-@router.post("", response_model=AnalysisResponse)
-async def create_analysis(
-    payload: AnalysisRequest,
+@router.post("/uploads", response_model=AnalysisResponse)
+async def create_upload_analysis(
+    request: Request,
     response: Response,
 ):
+    media_type = request.headers.get("content-type", "").partition(";")[0].lower()
+    if media_type not in ALLOWED_UPLOAD_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Upload an MP4, MOV, WebM, MKV, or AVI video.",
+        )
+
     try:
-        url = normalize_youtube_url(str(payload.url))
-    except InvalidYouTubeUrl as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        content_length = int(request.headers.get("content-length", ""))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_411_LENGTH_REQUIRED,
+            detail="A valid Content-Length header is required.",
+        ) from exc
+    if content_length <= 0:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+    if content_length > settings.MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="The maximum upload size is 25 MiB.",
+        )
 
     quota = await enforce_daily_submission_limit()
     response.headers["X-RateLimit-Limit"] = str(quota.limit)
     response.headers["X-RateLimit-Remaining"] = str(quota.remaining)
     response.headers["X-RateLimit-Reset"] = str(quota.reset_after_seconds)
 
-    analysis_id = analysis_id_for(url)
-    existing = await collection.find_one({"_id": analysis_id})
-    if existing:
-        if existing.get("status") == "error":
-            now = datetime.now(timezone.utc)
-            await collection.update_one(
-                {"_id": analysis_id, "status": "error"},
-                {"$set": {
-                    "status": "processing",
-                    "accent": None,
-                    "confidence": None,
-                    "language": None,
-                    "reason": None,
-                    "updated_at": now,
-                }},
-            )
-            try:
-                enqueue_analysis(analysis_id, url)
-            except Exception as exc:
-                await collection.update_one(
-                    {"_id": analysis_id, "status": "processing"},
-                    {"$set": {
-                        "status": "error",
-                        "reason": "queue_unavailable",
-                        "updated_at": datetime.now(timezone.utc),
-                    }},
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="The analysis queue is temporarily unavailable.",
-                ) from exc
-            await redis_client.delete(f"analysis:{analysis_id}")
-            existing.update({
-                "status": "processing",
-                "accent": None,
-                "confidence": None,
-                "language": None,
-                "reason": None,
-                "updated_at": now,
-            })
-            response.status_code = status.HTTP_202_ACCEPTED
-        return public_result(existing)
-
+    cleanup_stale_uploads()
+    analysis_id = uuid4().hex
     now = datetime.now(timezone.utc)
     document = {
         "_id": analysis_id,
-        "url": url,
         "status": "processing",
+        "source": "upload",
+        "content_type": media_type,
+        "upload_bytes": content_length,
         "created_at": now,
         "updated_at": now,
     }
 
+    partial_path = upload_path_for(analysis_id, partial=True)
+    final_path = upload_path_for(analysis_id)
     try:
+        received = 0
+        with partial_path.open("xb") as destination:
+            async for chunk in request.stream():
+                received += len(chunk)
+                if received > settings.MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                        detail="The maximum upload size is 25 MiB.",
+                    )
+                destination.write(chunk)
+
+        if received == 0:
+            raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+        if received != content_length:
+            raise HTTPException(status_code=400, detail="The upload was incomplete.")
+
+        os.replace(partial_path, final_path)
         await collection.insert_one(document)
-        enqueue_analysis(analysis_id, url)
-    except DuplicateKeyError:
-        document = await collection.find_one({"_id": analysis_id}) or document
+        enqueue_analysis(analysis_id)
+    except HTTPException:
+        delete_upload(analysis_id)
+        raise
     except Exception as exc:
+        delete_upload(analysis_id)
         await collection.delete_one({"_id": analysis_id, "status": "processing"})
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

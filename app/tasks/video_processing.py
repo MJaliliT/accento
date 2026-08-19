@@ -5,11 +5,11 @@ from datetime import datetime, timezone
 
 from app.core.cache_sync import redis_client_sync
 from app.core.config import settings
-from app.core.database_sync import collection
+from app.core.database_sync import get_collection
 from app.core.logger import logger
 from app.services.accent_service import detect_accent
 from app.services.language_service import detect_language
-from app.services.youtube_service import download_audio, get_video_info
+from app.services.upload_service import extract_audio_sample
 
 
 def cache_result(analysis_id: str, result: dict, ttl: int) -> None:
@@ -22,6 +22,7 @@ def cache_result(analysis_id: str, result: dict, ttl: int) -> None:
 
 
 def store_result(analysis_id: str, result: dict) -> dict:
+    collection = get_collection()
     collection.update_one(
         {"_id": analysis_id},
         {"$set": {**result, "updated_at": datetime.now(timezone.utc)}},
@@ -32,6 +33,7 @@ def store_result(analysis_id: str, result: dict) -> dict:
 
 
 def store_error(analysis_id: str, reason: str = "processing_failed") -> dict:
+    collection = get_collection()
     result = {
         "status": "error",
         "accent": None,
@@ -48,14 +50,14 @@ def store_error(analysis_id: str, reason: str = "processing_failed") -> dict:
     return result
 
 
-def process_video(analysis_id: str, url: str):
+def process_upload(analysis_id: str):
     logger.info("Processing analysis %s", analysis_id)
 
     cached = redis_client_sync.get(f"analysis:{analysis_id}")
     if cached:
         return json.loads(cached)
 
-    db_result = collection.find_one({"_id": analysis_id})
+    db_result = get_collection().find_one({"_id": analysis_id})
     if db_result and db_result.get("status") == "done":
         result = {
             key: db_result.get(key)
@@ -66,17 +68,7 @@ def process_video(analysis_id: str, url: str):
 
     audio_path = None
     try:
-        info = get_video_info(url)
-        if info["is_live"] or info["live_status"] == "is_live":
-            return store_result(analysis_id, {
-                "status": "done",
-                "accent": None,
-                "confidence": None,
-                "language": None,
-                "reason": "live_stream_skipped",
-            })
-
-        audio_path = download_audio(url)
+        audio_path = extract_audio_sample(analysis_id)
         language = detect_language(audio_path).lower()
         logger.info("Detected language for %s: %s", analysis_id, language)
 

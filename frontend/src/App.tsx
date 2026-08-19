@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { ChangeEvent, FormEvent, useEffect, useState } from 'react'
 
 type AnalysisStatus = 'processing' | 'done' | 'error'
 
@@ -25,17 +25,22 @@ type RestTrace = {
 }
 
 const languageNames = new Intl.DisplayNames(['en'], { type: 'language' })
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+function formatBytes(bytes: number) {
+  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`
+}
 
 function readableLabel(value: string) {
   return value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 function resultMessage(analysis: Analysis) {
-  if (analysis.reason === 'youtube_access_blocked') {
-    return ['YouTube access blocked', 'YouTube refused the server request before audio could be analyzed. Try another public video later.']
+  if (analysis.reason === 'unsupported_media') {
+    return ['Unsupported video', 'The file could not be decoded or does not contain an audio stream.']
   }
-  if (analysis.reason === 'live_stream_skipped') {
-    return ['Live stream', 'Live videos are not analyzed. Try a recorded video.']
+  if (analysis.reason === 'upload_expired') {
+    return ['Upload expired', 'The temporary upload expired before processing. Please upload it again.']
   }
   if (analysis.reason === 'non_english') {
     const language = analysis.language
@@ -44,7 +49,7 @@ function resultMessage(analysis: Analysis) {
     return ['Non-English speech', `${language} was detected, so accent analysis was skipped.`]
   }
   if (analysis.status === 'error') {
-    return ['Analysis unsuccessful', 'We could not process this video. Check that it is public and try again.']
+    return ['Analysis unsuccessful', 'We could not process this video. Try a different supported file.']
   }
   return [
     `${readableLabel(analysis.accent || 'Unknown')} accent`,
@@ -53,12 +58,26 @@ function resultMessage(analysis: Analysis) {
 }
 
 export default function App() {
-  const [url, setUrl] = useState('')
+  const [file, setFile] = useState<File | null>(null)
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [trace, setTrace] = useState<RestTrace | null>(null)
   const [copied, setCopied] = useState(false)
+
+  function selectFile(event: ChangeEvent<HTMLInputElement>) {
+    const nextFile = event.target.files?.[0] ?? null
+    setAnalysis(null)
+    setTrace(null)
+    if (nextFile && nextFile.size > MAX_UPLOAD_BYTES) {
+      setFile(null)
+      setError('The maximum upload size is 25 MiB.')
+      event.target.value = ''
+      return
+    }
+    setFile(nextFile)
+    setError('')
+  }
 
   async function inspectResponse(
     response: Response,
@@ -126,22 +145,29 @@ export default function App() {
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    if (!file) {
+      setError('Choose a video file first.')
+      return
+    }
     setSubmitting(true)
     setError('')
     setAnalysis(null)
     try {
-      const endpoint = '/api/analyses'
+      const endpoint = '/api/analyses/uploads'
       const startedAt = performance.now()
-      const response = await fetch('/api/analyses', {
+      const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ url }),
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+          Accept: 'application/json',
+        },
+        body: file,
       })
       setAnalysis(await inspectResponse(
         response,
         'POST',
         endpoint,
-        { url },
+        { filename: file.name, contentType: file.type || 'application/octet-stream', bytes: file.size },
         startedAt,
       ))
     } catch (submitError) {
@@ -177,35 +203,42 @@ export default function App() {
           <p className="eyebrow">Production REST API · ML inference</p>
           <h1>What accent do you hear?</h1>
           <p className="subtitle">
-            Paste a public YouTube link. Accento samples a few seconds of English speech
-            and estimates the speaker’s accent.
+            Upload a video. Accento samples five seconds of English speech, estimates the
+            speaker’s accent, and deletes the file immediately after processing.
           </p>
           <p className="builder-line">Engineered by <a href="https://mjalili.com">Mohammad Jalili</a> · Backend Developer</p>
         </section>
 
         <section className="analyzer" aria-labelledby="analyzer-title">
-          <h2 id="analyzer-title" className="sr-only">Analyze a YouTube video</h2>
+          <h2 id="analyzer-title" className="sr-only">Analyze an uploaded video</h2>
           <form onSubmit={submit}>
-            <label htmlFor="video-url">YouTube URL</label>
-            <div className="form-row">
-              <input
-                id="video-url"
-                type="url"
-                inputMode="url"
-                placeholder="https://www.youtube.com/watch?v=…"
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                required
-                disabled={isProcessing}
-                aria-describedby="url-help"
-              />
-              <button type="submit" disabled={isProcessing}>
+            <label htmlFor="video-file">Video file</label>
+            <div className="upload-row">
+              <label className={`upload-picker ${file ? 'upload-selected' : ''}`} htmlFor="video-file">
+                <input
+                  id="video-file"
+                  className="file-input"
+                  type="file"
+                  accept=".mp4,.mov,.webm,.mkv,.avi,video/mp4,video/quicktime,video/webm,video/x-matroska,video/x-msvideo"
+                  onChange={selectFile}
+                  required
+                  disabled={isProcessing}
+                  aria-describedby="upload-help"
+                />
+                <span className="upload-icon" aria-hidden="true">↑</span>
+                <span className="upload-copy">
+                  <strong>{file ? file.name : 'Choose a video'}</strong>
+                  <small>{file ? `${formatBytes(file.size)} · ready to upload` : 'MP4, MOV, WebM, MKV, or AVI'}</small>
+                </span>
+                <span className="browse-label">Browse</span>
+              </label>
+              <button type="submit" disabled={isProcessing || !file}>
                 {isProcessing ? <><span className="spinner" />Analyzing…</> : 'Analyze accent'}
               </button>
             </div>
             <div className="form-meta">
-              <p id="url-help">Public, non-live videos only · Global quota: 4 submissions per UTC day</p>
-              <span className="quota-badge">Resets 00:00 UTC</span>
+              <p id="upload-help">25 MiB maximum · File deleted after processing or within 30 minutes · Global quota: 4/day</p>
+              <span className="quota-badge">Ephemeral storage</span>
             </div>
           </form>
 
@@ -229,7 +262,7 @@ export default function App() {
 
         <section className="benefits" aria-label="How Accento works">
           <article><strong>Fast result</strong><span>Queued processing keeps the page responsive.</span></article>
-          <article><strong>Minimal retention</strong><span>Temporary audio is deleted immediately.</span></article>
+          <article><strong>Ephemeral by design</strong><span>Uploads are deleted immediately, with a 30-minute safety cleanup.</span></article>
           <article><strong>Honest limitations</strong><span>An estimate, not a claim about identity.</span></article>
         </section>
 
@@ -243,7 +276,7 @@ export default function App() {
           </div>
 
           <div className="endpoint-list" aria-label="Public API endpoints">
-            <article><span className="method method-post">POST</span><code>/api/analyses</code><p>Validate and enqueue, with a global four-per-day quota.</p><span className="status-code">202</span></article>
+            <article><span className="method method-post">POST</span><code>/api/analyses/uploads</code><p>Stream a bounded video into ephemeral storage and enqueue it.</p><span className="status-code">202</span></article>
             <article><span className="method method-get">GET</span><code>/api/analyses/:id</code><p>Poll the cached or persisted result.</p><span className="status-code">200</span></article>
             <article><span className="method method-get">GET</span><code>/api/health/ready</code><p>Check MongoDB and Redis readiness.</p><span className="status-code">200</span></article>
           </div>
@@ -258,17 +291,19 @@ export default function App() {
                   {trace.quotaRemaining !== null && <span>daily-remaining: {trace.quotaRemaining}</span>}
                   <span title={trace.requestId}>request-id: {trace.requestId.slice(0, 12)}…</span>
                 </div>
-              ) : <span className="console-idle">Waiting for an analysis request</span>}
+              ) : <span className="console-idle">Waiting for a video upload</span>}
             </div>
 
             <div className="console-grid">
               <div className="code-panel">
                 <div className="code-heading">
                   <span>Request</span>
-                  <span>{trace ? `${trace.method} ${trace.endpoint}` : 'POST /api/analyses'}</span>
+                  <span>{trace ? `${trace.method} ${trace.endpoint}` : 'POST /api/analyses/uploads'}</span>
                 </div>
                 <pre><code>{JSON.stringify(trace?.request ?? {
-                  url: 'https://www.youtube.com/watch?v=…',
+                  filename: 'speech-sample.mp4',
+                  contentType: 'video/mp4',
+                  bytes: 5242880,
                 }, null, 2)}</code></pre>
               </div>
               <div className="code-panel">
@@ -292,7 +327,7 @@ export default function App() {
 
           <div className="architecture" aria-label="Backend request architecture">
             <span><strong>01</strong> Nginx</span><i>→</i>
-            <span><strong>02</strong> FastAPI</span><i>→</i>
+            <span><strong>02</strong> FastAPI + tmpfs</span><i>→</i>
             <span><strong>03</strong> Redis + Celery</span><i>→</i>
             <span><strong>04</strong> ONNX worker</span><i>→</i>
             <span><strong>05</strong> MongoDB</span>

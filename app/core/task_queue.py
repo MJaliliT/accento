@@ -10,9 +10,9 @@ celery_client = Celery(
 )
 
 
-def enqueue_analysis(analysis_id: str, url: str) -> None:
+def enqueue_analysis(analysis_id: str) -> None:
     celery_client.send_task(
-        "accento.process_video",
-        args=[analysis_id, url],
+        "accento.process_upload",
+        args=[analysis_id],
         queue="accento",
     )
