@@ -11,3 +11,5 @@ __pycache__/
 /.env
 *.pyc
 /app/services/accent_model/*
+/accento_github_deploy
+/accento_github_deploy.pub
