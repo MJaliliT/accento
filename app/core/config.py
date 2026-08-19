@@ -21,6 +21,10 @@ class Settings:
     ACCENT_THRESHOLD = float(os.getenv("ACCENT_THRESHOLD", 0.6))
 
     TEMP_AUDIO_DIR = os.getenv("TEMP_AUDIO_DIR", "/tmp")
+    POT_PROVIDER_URL = os.getenv(
+        "POT_PROVIDER_URL",
+        "http://pot-provider:4416",
+    )
 
     DAILY_ANALYSIS_LIMIT = int(os.getenv("DAILY_ANALYSIS_LIMIT", "4"))
     RESULT_CACHE_SECONDS = int(os.getenv("RESULT_CACHE_SECONDS", "86400"))

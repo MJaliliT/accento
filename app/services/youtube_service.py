@@ -6,6 +6,7 @@ import tempfile
 import yt_dlp
 from yt_dlp.utils import DownloadError, download_range_func
 
+from app.core.config import settings
 from app.core.logger import logger
 from app.services.youtube_errors import YoutubeAccessBlocked, is_youtube_access_blocked
 
@@ -13,6 +14,12 @@ from app.services.youtube_errors import YoutubeAccessBlocked, is_youtube_access_
 def youtube_options() -> dict:
     return {
         "js_runtimes": {"deno": {"path": None}},
+        "extractor_args": {
+            "youtube": {"player_client": ["mweb"]},
+            "youtubepot-bgutilhttp": {
+                "base_url": [settings.POT_PROVIDER_URL],
+            },
+        },
     }
 
 
